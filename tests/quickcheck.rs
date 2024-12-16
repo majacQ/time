@@ -1,5 +1,8 @@
+use num_conv::prelude::*;
 use quickcheck::{Arbitrary, TestResult};
 use quickcheck_macros::quickcheck;
+use time::macros::{format_description, time};
+use time::Weekday::*;
 use time::{Date, Duration, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset, Weekday};
 
 macro_rules! test_shrink {
@@ -51,6 +54,49 @@ fn date_ymd_roundtrip(d: Date) -> bool {
 fn date_ywd_roundtrip(d: Date) -> bool {
     let (year, week, weekday) = d.to_iso_week_date();
     Date::from_iso_week_date(year, week, weekday) == Ok(d)
+}
+
+#[quickcheck]
+fn date_format_century_last_two_equivalent(d: Date) -> bool {
+    let split_format = format_description!("[year repr:century][year repr:last_two]-[month]-[day]");
+    let split = d.format(&split_format).expect("formatting failed");
+
+    let combined_format = format_description!("[year]-[month]-[day]");
+    let combined = d.format(&combined_format).expect("formatting failed");
+
+    split == combined
+}
+
+#[quickcheck]
+fn date_parse_century_last_two_equivalent_extended(d: Date) -> TestResult {
+    // With the extended range, there is an ambiguity when parsing a year with fewer than six
+    // digits, as the first four are consumed by the century, leaving at most one for the last
+    // two digits.
+    if !matches!(d.year().unsigned_abs().to_string().len(), 6) {
+        return TestResult::discard();
+    }
+
+    let split_format = format_description!("[year repr:century][year repr:last_two]-[month]-[day]");
+    let combined_format = format_description!("[year]-[month]-[day]");
+    let combined = d.format(&combined_format).expect("formatting failed");
+
+    TestResult::from_bool(Date::parse(&combined, &split_format).expect("parsing failed") == d)
+}
+
+#[quickcheck]
+fn date_parse_century_last_two_equivalent_standard(d: Date) -> TestResult {
+    // With the standard range, the year must be at most four digits.
+    if !matches!(d.year(), -9999..=9999) {
+        return TestResult::discard();
+    }
+
+    let split_format = format_description!(
+        "[year repr:century range:standard][year repr:last_two range:standard]-[month]-[day]"
+    );
+    let combined_format = format_description!("[year range:standard]-[month]-[day]");
+    let combined = d.format(&combined_format).expect("formatting failed");
+
+    TestResult::from_bool(Date::parse(&combined, &split_format).expect("parsing failed") == d)
 }
 
 #[quickcheck]
@@ -113,6 +159,26 @@ fn unix_timestamp_nanos_roundtrip(odt: OffsetDateTime) -> TestResult {
 }
 
 #[quickcheck]
+fn number_from_monday_roundtrip(w: Weekday) -> bool {
+    Monday.nth_next(w.number_from_monday() + 7 - 1) == w
+}
+
+#[quickcheck]
+fn number_from_sunday_roundtrip(w: Weekday) -> bool {
+    Sunday.nth_next(w.number_from_sunday() + 7 - 1) == w
+}
+
+#[quickcheck]
+fn number_days_from_monday_roundtrip(w: Weekday) -> bool {
+    Monday.nth_next(w.number_days_from_monday()) == w
+}
+
+#[quickcheck]
+fn number_days_from_sunday_roundtrip(w: Weekday) -> bool {
+    Sunday.nth_next(w.number_days_from_sunday()) == w
+}
+
+#[quickcheck]
 fn weekday_supports_arbitrary(w: Weekday) -> bool {
     (1..=7).contains(&w.number_from_monday())
 }
@@ -120,14 +186,14 @@ fn weekday_supports_arbitrary(w: Weekday) -> bool {
 #[quickcheck]
 fn weekday_can_shrink(w: Weekday) -> bool {
     match w {
-        Weekday::Monday => w.shrink().next().is_none(),
+        Monday => w.shrink().next().is_none(),
         _ => w.shrink().next() == Some(w.previous()),
     }
 }
 
 #[quickcheck]
 fn month_supports_arbitrary(m: Month) -> bool {
-    (1..=12).contains(&(m as u8))
+    (1..=12).contains(&u8::from(m))
 }
 
 #[quickcheck]
@@ -227,7 +293,17 @@ fn odt_sub_no_panic(left: OffsetDateTime, right: OffsetDateTime) -> bool {
 
 #[quickcheck]
 fn odt_to_offset_no_panic(odt: OffsetDateTime, offset: UtcOffset) -> TestResult {
-    if odt.date() == Date::MIN || odt.date() == Date::MAX {
+    if Date::MIN
+        .midnight()
+        .assume_utc()
+        .checked_add(Duration::seconds(offset.whole_seconds().extend()))
+        .is_none()
+        || Date::MAX
+            .with_time(time!(23:59:59.999_999_999))
+            .assume_utc()
+            .checked_add(Duration::seconds(offset.whole_seconds().extend()))
+            .is_none()
+    {
         return TestResult::discard();
     }
 
@@ -238,7 +314,17 @@ fn odt_to_offset_no_panic(odt: OffsetDateTime, offset: UtcOffset) -> TestResult 
 
 #[quickcheck]
 fn odt_replace_offset_no_panic(odt: OffsetDateTime, offset: UtcOffset) -> TestResult {
-    if odt.date() == Date::MIN || odt.date() == Date::MAX {
+    if Date::MIN
+        .midnight()
+        .assume_offset(odt.offset())
+        .checked_add(Duration::seconds(offset.whole_seconds().extend()))
+        .is_none()
+        || Date::MAX
+            .with_time(time!(23:59:59.999_999_999))
+            .assume_offset(odt.offset())
+            .checked_add(Duration::seconds(offset.whole_seconds().extend()))
+            .is_none()
+    {
         return TestResult::discard();
     }
 

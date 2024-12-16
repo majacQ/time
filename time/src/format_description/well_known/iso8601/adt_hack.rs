@@ -11,7 +11,7 @@ use super::{Config, DateKind, FormattedComponents as FC, OffsetPrecision, TimePr
 #[doc(hidden)]
 pub type DoNotRelyOnWhatThisIs = u128;
 
-/// An encoded [`Config`] that can be used as a const parameter to [`Iso8601`].
+/// An encoded [`Config`] that can be used as a const parameter to [`Iso8601`](super::Iso8601).
 ///
 /// The type this is aliased to must not be relied upon. It can change in any release without
 /// notice.
@@ -227,12 +227,10 @@ mod tests {
 
     macro_rules! assert_decode_fail {
         ($encoding:expr) => {
-            assert!(
-                std::panic::catch_unwind(|| {
-                    Config::decode($encoding);
-                })
-                .is_err()
-            );
+            assert!(std::panic::catch_unwind(|| {
+                Config::decode($encoding);
+            })
+            .is_err());
         };
     }
 

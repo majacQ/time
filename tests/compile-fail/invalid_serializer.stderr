@@ -66,16 +66,14 @@ error: unexpected token: :
 12 | serde::format_description!(my_format, OffsetDateTime : "[year] [month]"); // not a comma
    |                                                      ^
 
-error: invalid component name `bad` at byte index 1
+error: invalid component
   --> ../tests/compile-fail/invalid_serializer.rs:13:55
    |
 13 | serde::format_description!(my_format, OffsetDateTime, "[bad]"); // bad component name
    |                                                       ^^^^^^^
 
-error[E0432]: unresolved import `not_string`
-  --> ../tests/compile-fail/invalid_serializer.rs:14:1
+error[E0425]: cannot find value `not_string` in this scope
+  --> ../tests/compile-fail/invalid_serializer.rs:14:55
    |
-14 | serde::format_description!(my_format, OffsetDateTime, not_string); // string format wrong type
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no external crate `not_string`
-   |
-   = note: this error originates in the macro `serde::format_description` (in Nightly builds, run with -Z macro-backtrace for more info)
+14 | serde::format_description!(my_format, OffsetDateTime, not_string); // not in scope
+   |                                                       ^^^^^^^^^^ not found in this scope
