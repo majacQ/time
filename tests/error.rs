@@ -31,21 +31,21 @@ macro_rules! assert_source {
 }
 
 fn component_range() -> ComponentRange {
-    Date::from_ordinal_date(0, 367).unwrap_err()
+    Date::from_ordinal_date(0, 367).expect_err("367 is not a valid day")
 }
 
 fn insufficient_type_information() -> Format {
     Time::MIDNIGHT
-        .format(&time::format_description::well_known::Rfc3339)
-        .unwrap_err()
+        .format(&format_description::well_known::Rfc3339)
+        .expect_err("missing date and UTC offset")
 }
 
 fn unexpected_trailing_characters() -> Parse {
-    Time::parse("a", format_description!("")).unwrap_err()
+    Time::parse("a", format_description!("")).expect_err("should fail to parse")
 }
 
 fn invalid_format_description() -> InvalidFormatDescription {
-    format_description::parse("[").unwrap_err()
+    format_description::parse("[").expect_err("format description is invalid")
 }
 
 fn io_error() -> io::Error {
@@ -53,7 +53,7 @@ fn io_error() -> io::Error {
 }
 
 fn invalid_literal() -> ParseFromDescription {
-    Parsed::parse_literal(b"a", b"b").unwrap_err()
+    Parsed::parse_literal(b"a", b"b").expect_err("should fail to parse")
 }
 
 #[test]
@@ -138,8 +138,11 @@ fn source() {
         Error::from(ParseFromDescription::InvalidComponent("a")),
         ParseFromDescription
     );
-    assert_source!(unexpected_trailing_characters(), None);
-    assert_source!(Error::from(unexpected_trailing_characters()), None);
+    assert_source!(unexpected_trailing_characters(), ParseFromDescription);
+    assert_source!(
+        Error::from(unexpected_trailing_characters()),
+        ParseFromDescription
+    );
     assert_source!(
         Error::from(invalid_format_description()),
         InvalidFormatDescription
@@ -154,6 +157,7 @@ fn component_name() {
     assert_eq!(component_range().name(), "ordinal");
 }
 
+#[allow(clippy::cognitive_complexity)] // all test the same thing
 #[test]
 fn conversion() {
     assert!(ComponentRange::try_from(Error::from(component_range())).is_ok());
@@ -163,6 +167,7 @@ fn conversion() {
     assert!(InvalidFormatDescription::try_from(Error::from(invalid_format_description())).is_ok());
     assert!(ParseFromDescription::try_from(Error::from(invalid_literal())).is_ok());
     assert!(ParseFromDescription::try_from(Parse::from(invalid_literal())).is_ok());
+    assert!(ParseFromDescription::try_from(unexpected_trailing_characters()).is_ok());
     assert!(Parse::try_from(Error::from(unexpected_trailing_characters())).is_ok());
     assert!(Parse::try_from(Error::from(invalid_literal())).is_ok());
     assert!(Parse::try_from(Error::from(TryFromParsed::InsufficientInformation)).is_ok());
@@ -171,7 +176,7 @@ fn conversion() {
     assert!(ComponentRange::try_from(TryFromParsed::ComponentRange(component_range())).is_ok());
     assert!(TryFromParsed::try_from(Error::from(TryFromParsed::InsufficientInformation)).is_ok());
     assert!(TryFromParsed::try_from(Parse::from(TryFromParsed::InsufficientInformation)).is_ok());
-    assert!(std::io::Error::try_from(Format::from(io_error())).is_ok());
+    assert!(io::Error::try_from(Format::from(io_error())).is_ok());
 
     assert!(ComponentRange::try_from(Error::from(IndeterminateOffset)).is_err());
     assert!(ConversionRange::try_from(Error::from(IndeterminateOffset)).is_err());
@@ -179,12 +184,11 @@ fn conversion() {
     assert!(IndeterminateOffset::try_from(Error::from(ConversionRange)).is_err());
     assert!(InvalidFormatDescription::try_from(Error::from(IndeterminateOffset)).is_err());
     assert!(ParseFromDescription::try_from(Error::from(IndeterminateOffset)).is_err());
-    assert!(ParseFromDescription::try_from(unexpected_trailing_characters()).is_err());
     assert!(Parse::try_from(Error::from(IndeterminateOffset)).is_err());
     assert!(DifferentVariant::try_from(Error::from(IndeterminateOffset)).is_err());
     assert!(InvalidVariant::try_from(Error::from(IndeterminateOffset)).is_err());
     assert!(ComponentRange::try_from(TryFromParsed::InsufficientInformation).is_err());
     assert!(TryFromParsed::try_from(Error::from(IndeterminateOffset)).is_err());
     assert!(TryFromParsed::try_from(unexpected_trailing_characters()).is_err());
-    assert!(std::io::Error::try_from(insufficient_type_information()).is_err());
+    assert!(io::Error::try_from(insufficient_type_information()).is_err());
 }

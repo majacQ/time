@@ -1,39 +1,9 @@
-#![deny(
-    anonymous_parameters,
-    clippy::all,
-    const_err,
-    illegal_floating_point_literal_pattern,
-    late_bound_lifetime_arguments,
-    path_statements,
-    patterns_in_fns_without_body,
-    rust_2018_idioms,
-    trivial_casts,
-    trivial_numeric_casts,
-    unreachable_pub,
-    unsafe_code,
-    unused_extern_crates
-)]
-#![warn(
-    clippy::dbg_macro,
-    clippy::decimal_literal_representation,
-    clippy::get_unwrap,
-    clippy::missing_docs_in_private_items,
-    clippy::nursery,
-    clippy::print_stdout,
-    clippy::todo,
-    clippy::unimplemented,
-    clippy::unwrap_in_result,
-    clippy::unwrap_used,
-    clippy::use_debug,
-    unused_qualifications,
-    variant_size_differences
-)]
 #![allow(
-    clippy::clone_on_copy,
-    clippy::cmp_owned,
-    clippy::cognitive_complexity,
-    clippy::missing_const_for_fn,
-    clippy::unwrap_used
+    missing_docs,
+    clippy::missing_const_for_fn, // irrelevant for tests
+    clippy::std_instead_of_core, // irrelevant for tests
+    clippy::std_instead_of_alloc, // irrelevant for tests
+    clippy::alloc_instead_of_core, // irrelevant for tests
 )]
 
 #[cfg(not(all(
@@ -65,7 +35,7 @@ fn run_with_all_features() -> Result<(), Box<dyn std::error::Error>> {
     impl std::error::Error for Error {}
 
     let status = std::process::Command::new("cargo")
-        .args(&["test", "--all-features"])
+        .args(["test", "--all-features"])
         .status()?;
 
     return if status.success() {
@@ -104,11 +74,13 @@ macro_rules! require_all_features {
 require_all_features! {
     /// Construct a non-exhaustive modifier.
     macro_rules! modifier {
-        ($name:ident {
-            $($field:ident $(: $value:expr)?),+ $(,)?
-        }) => {{
+        ($name:ident $({
+            $($field:ident $(: $value:expr)?),* $(,)?
+        })?) => {{
+            // Needed for when there are no fields.
+            #[allow(unused_mut)]
             let mut value = ::time::format_description::modifier::$name::default();
-            $(value.$field = modifier!(@value $field $($value)?);)+
+            $($(value.$field = modifier!(@value $field $($value)?);)*)?
             value
         }};
 
@@ -124,6 +96,19 @@ require_all_features! {
             })
             .is_err())
         }
+    }
+
+    /// `assert_eq!` or `assert_ne!` depending on the value of `$is_eq`.
+    ///
+    /// This provides better diagnostics than `assert_eq!($left == $right, $is_eq)`.
+    macro_rules! assert_eq_ne {
+        ($left:expr, $right:expr, $is_eq:expr $(, $($rest:tt)*)?) => {{
+            if $is_eq {
+                assert_eq!($left, $right $(, $($rest)*)?);
+            } else {
+                assert_ne!($left, $right $(, $($rest)*)?);
+            }
+        }}
     }
 
     mod date;
@@ -148,6 +133,7 @@ require_all_features! {
     mod serde;
     mod serde_helpers;
     mod time;
+    mod utc_date_time;
     mod utc_offset;
     mod util;
     mod weekday;

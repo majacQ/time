@@ -17,6 +17,8 @@ mod parse_from_description;
 #[cfg(feature = "parsing")]
 mod try_from_parsed;
 
+#[cfg(feature = "parsing")]
+use core::convert::Infallible;
 use core::fmt;
 
 pub use component_range::ComponentRange;
@@ -40,27 +42,42 @@ pub use try_from_parsed::TryFromParsed;
 ///
 /// This can be used when you either don't know or don't care about the exact error returned.
 /// `Result<_, time::Error>` (or its alias `time::Result<_>`) will work in these situations.
-#[allow(missing_copy_implementations, variant_size_differences)]
-#[allow(clippy::missing_docs_in_private_items)] // variants only
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum Error {
+    #[allow(missing_docs)]
     ConversionRange(ConversionRange),
+    #[allow(missing_docs)]
     ComponentRange(ComponentRange),
     #[cfg(feature = "local-offset")]
+    #[allow(missing_docs)]
     IndeterminateOffset(IndeterminateOffset),
     #[cfg(feature = "formatting")]
+    #[allow(missing_docs)]
     Format(Format),
     #[cfg(feature = "parsing")]
+    #[allow(missing_docs)]
     ParseFromDescription(ParseFromDescription),
     #[cfg(feature = "parsing")]
+    #[allow(missing_docs)]
     #[non_exhaustive]
-    UnexpectedTrailingCharacters,
+    #[deprecated(
+        since = "0.3.28",
+        note = "no longer output. moved to the `ParseFromDescription` variant"
+    )]
+    UnexpectedTrailingCharacters {
+        #[doc(hidden)]
+        never: Infallible,
+    },
     #[cfg(feature = "parsing")]
+    #[allow(missing_docs)]
     TryFromParsed(TryFromParsed),
     #[cfg(all(any(feature = "formatting", feature = "parsing"), feature = "alloc"))]
+    #[allow(missing_docs)]
     InvalidFormatDescription(InvalidFormatDescription),
+    #[allow(missing_docs)]
     DifferentVariant(DifferentVariant),
+    #[allow(missing_docs)]
     InvalidVariant(InvalidVariant),
 }
 
@@ -76,7 +93,8 @@ impl fmt::Display for Error {
             #[cfg(feature = "parsing")]
             Self::ParseFromDescription(e) => e.fmt(f),
             #[cfg(feature = "parsing")]
-            Self::UnexpectedTrailingCharacters => f.write_str("unexpected trailing characters"),
+            #[allow(deprecated)]
+            Self::UnexpectedTrailingCharacters { never } => match *never {},
             #[cfg(feature = "parsing")]
             Self::TryFromParsed(e) => e.fmt(f),
             #[cfg(all(any(feature = "formatting", feature = "parsing"), feature = "alloc"))]
@@ -100,7 +118,8 @@ impl std::error::Error for Error {
             #[cfg(feature = "parsing")]
             Self::ParseFromDescription(err) => Some(err),
             #[cfg(feature = "parsing")]
-            Self::UnexpectedTrailingCharacters => None,
+            #[allow(deprecated)]
+            Self::UnexpectedTrailingCharacters { never } => match *never {},
             #[cfg(feature = "parsing")]
             Self::TryFromParsed(err) => Some(err),
             #[cfg(all(any(feature = "formatting", feature = "parsing"), feature = "alloc"))]
