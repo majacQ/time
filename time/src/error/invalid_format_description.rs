@@ -37,6 +37,14 @@ pub enum InvalidFormatDescription {
         /// The zero-based index where the component name should start.
         index: usize,
     },
+    /// A required modifier is missing.
+    #[non_exhaustive]
+    MissingRequiredModifier {
+        /// The name of the modifier that is missing.
+        name: &'static str,
+        /// The zero-based index of the component.
+        index: usize,
+    },
     /// Something was expected, but not found.
     #[non_exhaustive]
     Expected {
@@ -90,6 +98,12 @@ impl fmt::Display for InvalidFormatDescription {
             MissingComponentName { index } => {
                 write!(f, "missing component name at byte index {index}")
             }
+            MissingRequiredModifier { name, index } => {
+                write!(
+                    f,
+                    "missing required modifier `{name}` for component at byte index {index}"
+                )
+            }
             Expected {
                 what: expected,
                 index,
@@ -101,10 +115,14 @@ impl fmt::Display for InvalidFormatDescription {
                 context,
                 index,
             } => {
-                write!(
-                    f,
-                    "{what} is not supported in {context} at byte index {index}"
-                )
+                if context.is_empty() {
+                    write!(f, "{what} is not supported at byte index {index}")
+                } else {
+                    write!(
+                        f,
+                        "{what} is not supported in {context} at byte index {index}"
+                    )
+                }
             }
         }
     }

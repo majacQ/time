@@ -2,7 +2,7 @@
 //!
 //! This enables users to write tests such as this, and have test values provided automatically:
 //!
-//! ```
+//! ```ignore
 //! # #![allow(dead_code)]
 //! use quickcheck::quickcheck;
 //! use time::Date;
@@ -38,8 +38,9 @@ use alloc::boxed::Box;
 
 use quickcheck::{empty_shrinker, single_shrinker, Arbitrary, Gen};
 
-use crate::date_time::{DateTime, MaybeOffset};
-use crate::{Date, Duration, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset, Weekday};
+use crate::{
+    Date, Duration, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcDateTime, UtcOffset, Weekday,
+};
 
 /// Obtain an arbitrary value between the minimum and maximum inclusive.
 macro_rules! arbitrary_between {
@@ -53,12 +54,15 @@ macro_rules! arbitrary_between {
 
 impl Arbitrary for Date {
     fn arbitrary(g: &mut Gen) -> Self {
-        Self::from_julian_day_unchecked(arbitrary_between!(
-            i32;
-            g,
-            Self::MIN.to_julian_day(),
-            Self::MAX.to_julian_day()
-        ))
+        // Safety: The Julian day number is in range.
+        unsafe {
+            Self::from_julian_day_unchecked(arbitrary_between!(
+                i32;
+                g,
+                Self::MIN.to_julian_day(),
+                Self::MAX.to_julian_day()
+            ))
+        }
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
@@ -72,25 +76,22 @@ impl Arbitrary for Date {
 
 impl Arbitrary for Duration {
     fn arbitrary(g: &mut Gen) -> Self {
-        Self::nanoseconds_i128(arbitrary_between!(
-            i128;
-            g,
-            Self::MIN.whole_nanoseconds(),
-            Self::MAX.whole_nanoseconds()
-        ))
+        Self::new_ranged(<_>::arbitrary(g), <_>::arbitrary(g))
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         Box::new(
-            (self.subsec_nanoseconds(), self.whole_seconds())
+            (self.subsec_nanoseconds_ranged(), self.whole_seconds())
                 .shrink()
                 .map(|(mut nanoseconds, seconds)| {
                     // Coerce the sign if necessary.
-                    if (seconds > 0 && nanoseconds < 0) || (seconds < 0 && nanoseconds > 0) {
-                        nanoseconds *= -1;
+                    if (seconds > 0 && nanoseconds.get() < 0)
+                        || (seconds < 0 && nanoseconds.get() > 0)
+                    {
+                        nanoseconds = nanoseconds.neg();
                     }
 
-                    Self::new_unchecked(seconds, nanoseconds)
+                    Self::new_ranged_unchecked(seconds, nanoseconds)
                 }),
         )
     }
@@ -98,20 +99,20 @@ impl Arbitrary for Duration {
 
 impl Arbitrary for Time {
     fn arbitrary(g: &mut Gen) -> Self {
-        Self::__from_hms_nanos_unchecked(
-            arbitrary_between!(u8; g, 0, 23),
-            arbitrary_between!(u8; g, 0, 59),
-            arbitrary_between!(u8; g, 0, 59),
-            arbitrary_between!(u32; g, 0, 999_999_999),
+        Self::from_hms_nanos_ranged(
+            <_>::arbitrary(g),
+            <_>::arbitrary(g),
+            <_>::arbitrary(g),
+            <_>::arbitrary(g),
         )
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         Box::new(
-            self.as_hms_nano()
+            self.as_hms_nano_ranged()
                 .shrink()
                 .map(|(hour, minute, second, nanosecond)| {
-                    Self::__from_hms_nanos_unchecked(hour, minute, second, nanosecond)
+                    Self::from_hms_nanos_ranged(hour, minute, second, nanosecond)
                 }),
         )
     }
@@ -119,57 +120,56 @@ impl Arbitrary for Time {
 
 impl Arbitrary for PrimitiveDateTime {
     fn arbitrary(g: &mut Gen) -> Self {
-        Self(<_>::arbitrary(g))
+        Self::new(<_>::arbitrary(g), <_>::arbitrary(g))
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        Box::new(self.0.shrink().map(Self))
+        Box::new(
+            (self.date(), self.time())
+                .shrink()
+                .map(|(date, time)| Self::new(date, time)),
+        )
     }
 }
 
 impl Arbitrary for UtcOffset {
     fn arbitrary(g: &mut Gen) -> Self {
-        let seconds = arbitrary_between!(i32; g, -86_399, 86_399);
-        Self::__from_hms_unchecked(
-            (seconds / 3600) as _,
-            ((seconds % 3600) / 60) as _,
-            (seconds % 60) as _,
-        )
+        Self::from_hms_ranged(<_>::arbitrary(g), <_>::arbitrary(g), <_>::arbitrary(g))
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         Box::new(
-            self.as_hms().shrink().map(|(hours, minutes, seconds)| {
-                Self::__from_hms_unchecked(hours, minutes, seconds)
-            }),
+            self.as_hms_ranged()
+                .shrink()
+                .map(|(hours, minutes, seconds)| Self::from_hms_ranged(hours, minutes, seconds)),
         )
     }
 }
 
 impl Arbitrary for OffsetDateTime {
     fn arbitrary(g: &mut Gen) -> Self {
-        Self(<_>::arbitrary(g))
-    }
-
-    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-        Box::new(self.0.shrink().map(Self))
-    }
-}
-
-impl<O: MaybeOffset + 'static> Arbitrary for DateTime<O> {
-    fn arbitrary(g: &mut Gen) -> Self {
-        Self {
-            date: <_>::arbitrary(g),
-            time: <_>::arbitrary(g),
-            offset: <_>::arbitrary(g),
-        }
+        Self::new_in_offset(<_>::arbitrary(g), <_>::arbitrary(g), <_>::arbitrary(g))
     }
 
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         Box::new(
-            (self.date, self.time, self.offset)
+            (self.date(), self.time(), self.offset())
                 .shrink()
-                .map(|(date, time, offset)| Self { date, time, offset }),
+                .map(|(date, time, offset)| Self::new_in_offset(date, time, offset)),
+        )
+    }
+}
+
+impl Arbitrary for UtcDateTime {
+    fn arbitrary(g: &mut Gen) -> Self {
+        Self::new(<_>::arbitrary(g), <_>::arbitrary(g))
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        Box::new(
+            (self.date(), self.time())
+                .shrink()
+                .map(|(date, time)| Self::new(date, time)),
         )
     }
 }

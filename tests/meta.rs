@@ -14,23 +14,28 @@ use quickcheck::Arbitrary;
 use rand::distributions::{Distribution, Standard};
 use serde::{Deserialize, Serialize};
 use time::format_description::well_known::iso8601;
-use time::format_description::{modifier, well_known, Component, FormatItem};
+use time::format_description::{modifier, well_known, BorrowedFormatItem, Component};
 use time::formatting::Formattable;
 use time::parsing::{Parsable, Parsed};
+#[allow(deprecated)]
+use time::Instant;
 use time::{
-    error, ext, Date, Duration, Error, Instant, Month, OffsetDateTime, PrimitiveDateTime, Time,
+    error, ext, Date, Duration, Error, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcDateTime,
     UtcOffset, Weekday,
 };
 
+#[allow(clippy::cognitive_complexity)] // all test the same thing
 #[test]
 fn alignment() {
     macro_rules! assert_alignment {
-        ($t:ty, $alignment:literal) => {
+        ($t:ty, $alignment:expr) => {
+            let alignment = $alignment;
             assert_eq!(
                 ::core::mem::align_of::<$t>(),
-                $alignment,
-                concat!("alignment of `{}` was ", $alignment),
+                alignment,
+                "alignment of `{}` was {}",
                 stringify!($t),
+                alignment,
             );
         };
     }
@@ -39,6 +44,7 @@ fn alignment() {
     assert_alignment!(Duration, 8);
     assert_alignment!(OffsetDateTime, 4);
     assert_alignment!(PrimitiveDateTime, 4);
+    assert_alignment!(UtcDateTime, 4);
     assert_alignment!(Time, 4);
     assert_alignment!(UtcOffset, 1);
     assert_alignment!(error::ComponentRange, 8);
@@ -70,7 +76,7 @@ fn alignment() {
     assert_alignment!(iso8601::FormattedComponents, 1);
     assert_alignment!(iso8601::OffsetPrecision, 1);
     assert_alignment!(iso8601::TimePrecision, 1);
-    assert_alignment!(Parsed, 4);
+    assert_alignment!(Parsed, ::core::mem::align_of::<u128>());
     assert_alignment!(Month, 1);
     assert_alignment!(Weekday, 1);
     assert_alignment!(Error, 8);
@@ -79,8 +85,8 @@ fn alignment() {
     assert_alignment!(error::Parse, 8);
     assert_alignment!(error::ParseFromDescription, 8);
     assert_alignment!(error::TryFromParsed, 8);
-    assert_alignment!(Component, 1);
-    assert_alignment!(FormatItem<'_>, 8);
+    assert_alignment!(Component, 2);
+    assert_alignment!(BorrowedFormatItem<'_>, 8);
     assert_alignment!(modifier::MonthRepr, 1);
     assert_alignment!(modifier::Padding, 1);
     assert_alignment!(modifier::SubsecondDigits, 1);
@@ -89,35 +95,38 @@ fn alignment() {
     assert_alignment!(modifier::YearRepr, 1);
 }
 
+#[allow(clippy::cognitive_complexity)] // all test the same thing
 #[test]
 fn size() {
     macro_rules! assert_size {
         ($t:ty, $size:literal, $opt_size:literal) => {
-            assert_eq!(
+            assert!(
+                ::core::mem::size_of::<$t>() <= $size,
+                concat!("size of `{}` used to be ", $size, ", but is now {}"),
+                stringify!($t),
                 ::core::mem::size_of::<$t>(),
-                $size,
-                concat!("size of `{}` used to be ", $size),
-                stringify!($t),
             );
-            assert_eq!(
-                ::core::mem::size_of::<Option<$t>>(),
-                $opt_size,
-                concat!("size of `Option<{}>` used to be ", $opt_size),
+            assert!(
+                ::core::mem::size_of::<Option<$t>>() <= $opt_size,
+                concat!(
+                    "size of `Option<{}>` used to be ",
+                    $opt_size,
+                    ", but is now {}"
+                ),
                 stringify!($t),
+                ::core::mem::size_of::<Option<$t>>(),
             );
         };
     }
 
-    // A couple structs have their size decrease from 56 to 48 thanks to a compiler change. This
-    // change looks like it will land in 1.64 (2022-09-22).
-
-    assert_size!(Date, 4, 8);
+    assert_size!(Date, 4, 4);
     assert_size!(Duration, 16, 16);
     assert_size!(OffsetDateTime, 16, 16);
     assert_size!(PrimitiveDateTime, 12, 12);
+    assert_size!(UtcDateTime, 12, 12);
     assert_size!(Time, 8, 8);
     assert_size!(UtcOffset, 3, 4);
-    assert_size!(error::ComponentRange, 48, 48);
+    assert_size!(error::ComponentRange, 56, 56);
     assert_size!(error::ConversionRange, 0, 1);
     assert_size!(error::DifferentVariant, 0, 1);
     assert_size!(error::IndeterminateOffset, 0, 1);
@@ -134,7 +143,7 @@ fn size() {
     assert_size!(modifier::Subsecond, 1, 1);
     assert_size!(modifier::WeekNumber, 2, 2);
     assert_size!(modifier::Weekday, 3, 3);
-    assert_size!(modifier::Year, 4, 4);
+    assert_size!(modifier::Year, 5, 5);
     assert_size!(well_known::Rfc2822, 0, 1);
     assert_size!(well_known::Rfc3339, 0, 1);
     assert_size!(
@@ -147,17 +156,17 @@ fn size() {
     assert_size!(iso8601::FormattedComponents, 1, 1);
     assert_size!(iso8601::OffsetPrecision, 1, 1);
     assert_size!(iso8601::TimePrecision, 2, 2);
-    assert_size!(Parsed, 32, 32);
+    assert_size!(Parsed, 64, 64);
     assert_size!(Month, 1, 1);
     assert_size!(Weekday, 1, 1);
-    // assert_size!(Error, 56, 56);
+    assert_size!(Error, 64, 64);
     assert_size!(error::Format, 24, 24);
     assert_size!(error::InvalidFormatDescription, 48, 48);
-    // assert_size!(error::Parse, 56, 56);
-    assert_size!(error::ParseFromDescription, 16, 24);
-    assert_size!(error::TryFromParsed, 48, 48);
-    assert_size!(Component, 5, 5);
-    assert_size!(FormatItem<'_>, 24, 24);
+    assert_size!(error::Parse, 64, 64);
+    assert_size!(error::ParseFromDescription, 24, 24);
+    assert_size!(error::TryFromParsed, 56, 64);
+    assert_size!(Component, 6, 6); // TODO Size is 4 starting with rustc 1.71.
+    assert_size!(BorrowedFormatItem<'_>, 24, 24);
     assert_size!(modifier::MonthRepr, 1, 1);
     assert_size!(modifier::Padding, 1, 1);
     assert_size!(modifier::SubsecondDigits, 1, 1);
@@ -178,7 +187,8 @@ assert_obj_safe!(ext::NumericalStdDuration);
 // `Formattable` is not object safe.
 
 macro_rules! assert_impl {
-    ($($(@$lifetimes:lifetime),+ ;)? $type:ty: $($trait:path),+ $(,)?) => {
+    ($(#[$meta:meta])* $($(@$lifetimes:lifetime),+ ;)? $type:ty: $($trait:path),+ $(,)?) => {
+        $(#[$meta])*
         const _: fn() = || {
             fn assert_impl_all<$($($lifetimes,)+)? T: ?Sized $(+ $trait)+>() {}
             assert_impl_all::<$type>();
@@ -282,7 +292,7 @@ assert_impl! { @'a; Duration:
     Unpin,
     UnwindSafe,
 }
-assert_impl! { Instant:
+assert_impl! { #[allow(deprecated)] Instant:
     Add<Duration, Output = Instant>,
     Add<StdDuration, Output = Instant>,
     AddAssign<Duration>,
@@ -363,6 +373,40 @@ assert_impl! { @'a; PrimitiveDateTime:
     Sub<Duration, Output = PrimitiveDateTime>,
     Sub<StdDuration, Output = PrimitiveDateTime>,
     Sub<PrimitiveDateTime>,
+    SubAssign<Duration>,
+    SubAssign<StdDuration>,
+    TryFrom<Parsed, Error = error::TryFromParsed>,
+    Copy,
+    Eq,
+    RefUnwindSafe,
+    Send,
+    Sync,
+    Unpin,
+    UnwindSafe,
+}
+assert_impl! { @'a; UtcDateTime:
+    Add<Duration, Output = UtcDateTime>,
+    Add<StdDuration, Output = UtcDateTime>,
+    AddAssign<Duration>,
+    AddAssign<StdDuration>,
+    Arbitrary,
+    Clone,
+    Debug,
+    Deserialize<'a>,
+    Display,
+    Hash,
+    Ord,
+    PartialEq<UtcDateTime>,
+    PartialEq<OffsetDateTime>,
+    PartialEq<SystemTime>,
+    PartialOrd<UtcDateTime>,
+    PartialOrd<OffsetDateTime>,
+    PartialOrd<SystemTime>,
+    Serialize,
+    Sub<Duration, Output = UtcDateTime>,
+    Sub<StdDuration, Output = UtcDateTime>,
+    Sub<UtcDateTime>,
+    Sub<OffsetDateTime>,
     SubAssign<Duration>,
     SubAssign<StdDuration>,
     TryFrom<Parsed, Error = error::TryFromParsed>,
@@ -906,8 +950,8 @@ assert_impl! { @'a; Component:
     Clone,
     Debug,
     PartialEq<Component>,
-    PartialEq<FormatItem<'a>>,
-    TryFrom<FormatItem<'a>, Error = error::DifferentVariant>,
+    PartialEq<BorrowedFormatItem<'a>>,
+    TryFrom<BorrowedFormatItem<'a>, Error = error::DifferentVariant>,
     Copy,
     Eq,
     RefUnwindSafe,
@@ -916,14 +960,14 @@ assert_impl! { @'a; Component:
     Unpin,
     UnwindSafe,
 }
-assert_impl! { @'a; FormatItem<'_>:
+assert_impl! { @'a; BorrowedFormatItem<'_>:
     Clone,
     Debug,
-    From<&'a [FormatItem<'a>]>,
+    From<&'a [BorrowedFormatItem<'a>]>,
     From<Component>,
-    PartialEq<&'a [FormatItem<'a>]>,
+    PartialEq<&'a [BorrowedFormatItem<'a>]>,
     PartialEq<Component>,
-    PartialEq<FormatItem<'a>>,
+    PartialEq<BorrowedFormatItem<'a>>,
     Eq,
     Formattable,
     Parsable,
@@ -933,9 +977,9 @@ assert_impl! { @'a; FormatItem<'_>:
     Unpin,
     UnwindSafe,
 }
-assert_impl! { @'a; &[FormatItem<'_>]:
-    PartialEq<FormatItem<'a>>,
-    TryFrom<FormatItem<'a>, Error = error::DifferentVariant>,
+assert_impl! { @'a; &[BorrowedFormatItem<'_>]:
+    PartialEq<BorrowedFormatItem<'a>>,
+    TryFrom<BorrowedFormatItem<'a>, Error = error::DifferentVariant>,
 }
 assert_impl! { modifier::MonthRepr:
     Clone,
@@ -1035,7 +1079,7 @@ assert_impl! { StdDuration:
     SubAssign<Duration>,
     TryFrom<Duration>,
 }
-assert_impl! { StdInstant:
+assert_impl! { #[allow(deprecated)] StdInstant:
     Add<Duration, Output = StdInstant>,
     AddAssign<Duration>,
     Sub<Duration, Output = StdInstant>,

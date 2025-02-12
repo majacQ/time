@@ -1,5 +1,7 @@
 //! Various modifiers for components.
 
+use core::num::NonZeroU16;
+
 // region: date modifiers
 /// Day of the month.
 #[non_exhaustive]
@@ -99,8 +101,25 @@ pub struct WeekNumber {
 pub enum YearRepr {
     /// The full value of the year.
     Full,
+    /// All digits except the last two. Includes the sign, if any.
+    Century,
     /// Only the last two digits of the year.
     LastTwo,
+}
+
+/// The range of years that are supported.
+///
+/// This modifier has no effect when the year repr is [`LastTwo`](YearRepr::LastTwo).
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum YearRange {
+    /// Years between -9999 and 9999 are supported.
+    Standard,
+    /// Years between -999_999 and 999_999 are supported, with the sign being required if the year
+    /// contains more than four digits.
+    ///
+    /// If the `large-dates` feature is not enabled, this variant is equivalent to `Standard`.
+    Extended,
 }
 
 /// Year of the date.
@@ -111,6 +130,8 @@ pub struct Year {
     pub padding: Padding,
     /// What kind of representation should be used?
     pub repr: YearRepr,
+    /// What range of years is supported?
+    pub range: YearRange,
     /// Whether the value is based on the ISO week number or the Gregorian calendar.
     pub iso_week_based: bool,
     /// Whether the `+` sign is present when a positive year contains fewer than five digits.
@@ -234,6 +255,56 @@ pub enum Padding {
     None,
 }
 
+/// Ignore some number of bytes.
+///
+/// This has no effect when formatting.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Ignore {
+    /// The number of bytes to ignore.
+    pub count: NonZeroU16,
+}
+
+// Needed as `Default` is deliberately not implemented for `Ignore`. The number of bytes to ignore
+// must be explicitly provided.
+impl Ignore {
+    /// Create an instance of `Ignore` with the provided number of bytes to ignore.
+    pub const fn count(count: NonZeroU16) -> Self {
+        Self { count }
+    }
+}
+
+/// The precision of a Unix timestamp.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnixTimestampPrecision {
+    /// Seconds since the Unix epoch.
+    Second,
+    /// Milliseconds since the Unix epoch.
+    Millisecond,
+    /// Microseconds since the Unix epoch.
+    Microsecond,
+    /// Nanoseconds since the Unix epoch.
+    Nanosecond,
+}
+
+/// A Unix timestamp.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnixTimestamp {
+    /// The precision of the timestamp.
+    pub precision: UnixTimestampPrecision,
+    /// Whether the `+` sign must be present for a non-negative timestamp.
+    pub sign_is_mandatory: bool,
+}
+
+/// The end of input.
+///
+/// There is currently not customization for this modifier.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct End;
+
 /// Generate the provided code if and only if `pub` is present.
 macro_rules! if_pub {
     (pub $(#[$attr:meta])*; $($x:tt)*) => {
@@ -309,12 +380,15 @@ impl_const_default! {
     };
     /// Creates a modifier that indicates the value uses the [`Full`](Self::Full) representation.
     YearRepr => Self::Full;
+    /// Creates a modifier that indicates the value uses the [`Extended`](Self::Extended) range.
+    YearRange => Self::Extended;
     /// Creates a modifier that indicates the value uses the [`Full`](YearRepr::Full)
     /// representation, is [padded with zeroes](Padding::Zero), uses the Gregorian calendar as its
     /// base, and only includes the year's sign if necessary.
     @pub Year => Self {
         padding: Padding::Zero,
         repr: YearRepr::Full,
+        range: YearRange::Extended,
         iso_week_based: false,
         sign_is_mandatory: false,
     };
@@ -340,10 +414,10 @@ impl_const_default! {
     /// Creates a modifier that indicates the stringified value contains [one or more
     /// digits](SubsecondDigits::OneOrMore).
     @pub Subsecond => Self { digits: SubsecondDigits::OneOrMore };
-    /// Creates a modifier that indicates the value uses the `+` sign for all positive values
-    /// and is [padded with zeroes](Padding::Zero).
+    /// Creates a modifier that indicates the value only uses a sign for negative values and is
+    /// [padded with zeroes](Padding::Zero).
     @pub OffsetHour => Self {
-        sign_is_mandatory: true,
+        sign_is_mandatory: false,
         padding: Padding::Zero,
     };
     /// Creates a modifier that indicates the value is [padded with zeroes](Padding::Zero).
@@ -352,4 +426,15 @@ impl_const_default! {
     @pub OffsetSecond => Self { padding: Padding::Zero };
     /// Creates a modifier that indicates the value is [padded with zeroes](Self::Zero).
     Padding => Self::Zero;
+    /// Creates a modifier that indicates the value represents the [number of seconds](Self::Second)
+    /// since the Unix epoch.
+    UnixTimestampPrecision => Self::Second;
+    /// Creates a modifier that indicates the value represents the [number of
+    /// seconds](UnixTimestampPrecision::Second) since the Unix epoch. The sign is not mandatory.
+    @pub UnixTimestamp => Self {
+        precision: UnixTimestampPrecision::Second,
+        sign_is_mandatory: false,
+    };
+    /// Creates a modifier used to represent the end of input.
+    @pub End => End;
 }

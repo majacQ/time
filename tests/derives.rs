@@ -4,11 +4,12 @@ use std::hash::Hash;
 
 use time::error::{self, ConversionRange, IndeterminateOffset, TryFromParsed};
 use time::ext::NumericalDuration;
-use time::format_description::{self, modifier, well_known, Component, FormatItem, OwnedFormatItem};
-use time::macros::{date, offset, time};
+use time::format_description::{self, modifier, well_known, Component, BorrowedFormatItem, OwnedFormatItem};
+use time::macros::{date, offset, time, utc_datetime, datetime};
 use time::parsing::Parsed;
-use time::{Duration, Error, Instant, Month, Time, Weekday};
-use time_macros::datetime;
+use time::{Duration, Error, Month, Time, Weekday};
+#[allow(deprecated)]
+use time::Instant;
 
 macro_rules! assert_cloned_eq {
     ($x:expr) => {
@@ -17,21 +18,24 @@ macro_rules! assert_cloned_eq {
 }
 
 fn component_range_error() -> error::ComponentRange {
-    Time::from_hms(24, 0, 0).unwrap_err()
+    Time::from_hms(24, 0, 0).expect_err("24 is not a valid hour")
 }
 
 fn invalid_format_description() -> error::InvalidFormatDescription {
-    format_description::parse("[").unwrap_err()
+    format_description::parse("[").expect_err("format description is invalid")
 }
 
+#[allow(clippy::cognitive_complexity)] // all test the same thing
 #[test]
 fn clone() {
+    #[allow(deprecated)]
     let instant = Instant::now();
-    assert_cloned_eq!(date!(2021 - 001));
+    assert_cloned_eq!(date!(2021-001));
     assert_cloned_eq!(time!(0:00));
     assert_cloned_eq!(offset!(UTC));
     assert_cloned_eq!(datetime!(2021-001 0:00));
     assert_cloned_eq!(datetime!(2021-001 0:00 UTC));
+    assert_cloned_eq!(utc_datetime!(2021-001 0:00));
     assert_cloned_eq!(Weekday::Monday);
     assert_cloned_eq!(Month::January);
     assert_cloned_eq!(Duration::ZERO);
@@ -40,6 +44,7 @@ fn clone() {
     assert_cloned_eq!(ConversionRange);
     assert_cloned_eq!(invalid_format_description());
     assert_cloned_eq!(TryFromParsed::InsufficientInformation);
+    #[allow(clippy::clone_on_copy)] // needed for coverage
     let _ = Parsed::new().clone();
     assert_cloned_eq!(error::Parse::ParseFromDescription(
         error::ParseFromDescription::InvalidComponent("foo")
@@ -59,8 +64,7 @@ fn clone() {
     assert_cloned_eq!(well_known::iso8601::OffsetPrecision::Hour);
     assert_cloned_eq!(well_known::iso8601::FormattedComponents::None);
     assert_cloned_eq!(component_range_error());
-    assert_cloned_eq!(FormatItem::Literal(b""));
-    assert_cloned_eq!(time::util::local_offset::Soundness::Sound);
+    assert_cloned_eq!(BorrowedFormatItem::Literal(b""));
 
     assert_cloned_eq!(modifier::Day::default());
     assert_cloned_eq!(modifier::MonthRepr::default());
@@ -87,13 +91,15 @@ fn clone() {
 #[test]
 fn hash() {
     let mut hasher = DefaultHasher::new();
-    date!(2021 - 001).hash(&mut hasher);
+    date!(2021-001).hash(&mut hasher);
     time!(0:00).hash(&mut hasher);
     offset!(UTC).hash(&mut hasher);
     datetime!(2021-001 0:00).hash(&mut hasher);
     datetime!(2021-001 0:00 UTC).hash(&mut hasher);
+    utc_datetime!(2021-001 0:00).hash(&mut hasher);
     Weekday::Monday.hash(&mut hasher);
     Month::January.hash(&mut hasher);
+    #[allow(deprecated)]
     Instant::now().hash(&mut hasher);
     Duration::ZERO.hash(&mut hasher);
     component_range_error().hash(&mut hasher);
@@ -101,6 +107,7 @@ fn hash() {
 
 #[test]
 fn partial_ord() {
+    #[allow(deprecated)]
     let instant = Instant::now();
     assert_eq!(offset!(UTC).partial_cmp(&offset!(+1)), Some(Ordering::Less));
     assert_eq!(
@@ -127,17 +134,26 @@ fn ord() {
 #[test]
 fn debug() {
     macro_rules! debug_all {
-        ($($x:expr;)*) => {$(
-            let _ = format!("{:?}", $x);
-        )*};
+        () => {};
+        (#[$meta:meta] $x:expr; $($rest:tt)*) => {
+            #[$meta]
+            let _unused = format!("{:?}", $x);
+            debug_all!($($rest)*);
+        };
+        ($x:expr; $($rest:tt)*) => {
+            let _unused = format!("{:?}", $x);
+            debug_all!($($rest)*);
+        };
     }
 
     debug_all! {
+        utc_datetime!(2021-001 0:00);
         Duration::ZERO;
         IndeterminateOffset;
         ConversionRange;
         TryFromParsed::InsufficientInformation;
         Parsed::new();
+        #[allow(deprecated)]
         Instant::now();
         error::ParseFromDescription::InvalidComponent("foo");
         error::Format::InvalidComponent("foo");
@@ -151,7 +167,6 @@ fn debug() {
         well_known::iso8601::Config::DEFAULT;
         component_range_error();
         Error::ConversionRange(ConversionRange);
-        time::util::local_offset::Soundness::Sound;
 
         modifier::Day::default();
         modifier::MonthRepr::default();
@@ -174,13 +189,13 @@ fn debug() {
         modifier::OffsetSecond::default();
         modifier::Padding::default();
 
-        FormatItem::Literal(b"abcdef");
-        FormatItem::Compound(&[FormatItem::Component(Component::Day(modifier::Day::default()))]);
-        FormatItem::Optional(&FormatItem::Compound(&[]));
-        FormatItem::First(&[]);
-        OwnedFormatItem::from(FormatItem::Literal(b"abcdef"));
-        OwnedFormatItem::from(FormatItem::Compound(&[FormatItem::Component(Component::Day(modifier::Day::default()))]));
-        OwnedFormatItem::from(FormatItem::Optional(&FormatItem::Compound(&[])));
-        OwnedFormatItem::from(FormatItem::First(&[]));
+        BorrowedFormatItem::Literal(b"abcdef");
+        BorrowedFormatItem::Compound(&[BorrowedFormatItem::Component(Component::Day(modifier::Day::default()))]);
+        BorrowedFormatItem::Optional(&BorrowedFormatItem::Compound(&[]));
+        BorrowedFormatItem::First(&[]);
+        OwnedFormatItem::from(BorrowedFormatItem::Literal(b"abcdef"));
+        OwnedFormatItem::from(BorrowedFormatItem::Compound(&[BorrowedFormatItem::Component(Component::Day(modifier::Day::default()))]));
+        OwnedFormatItem::from(BorrowedFormatItem::Optional(&BorrowedFormatItem::Compound(&[])));
+        OwnedFormatItem::from(BorrowedFormatItem::First(&[]));
     }
 }

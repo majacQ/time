@@ -4,16 +4,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref_name }}
   cancel-in-progress: true
 
+# TODO re-add wasm32-wasip1 to `std_no_offset` once MSRV is at least 1.78
 env:
-  CARGO_INCREMENTAL: 0
   TYPE_CHECK_TARGETS: '{
     "no_std": [
     "thumbv7em-none-eabihf"
     ],
     "std_no_offset": [
     "x86_64-unknown-netbsd",
-    "x86_64-unknown-illumos",
-    "wasm32-wasi"
+    "x86_64-unknown-illumos"
     ],
     "std_with_offset": [
     "x86_64-unknown-linux-gnu",
@@ -47,12 +46,12 @@ on:
 jobs:
   check-targets:
     name: Type checking (${{ matrix.rust.name }}, ${{ matrix.kind.name }})
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) || github.event_name == 'push'
     strategy:
       matrix:
         rust:
-          - { version: "1.61.0", name: MSRV }
+          - { version: "1.67.1", name: MSRV }
           - { version: stable, name: stable }
         kind:
           - name: no_std
@@ -81,7 +80,10 @@ jobs:
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Cache cargo output
+        uses: Swatinem/rust-cache@v2
 
       - name: Generate target list
         run: |
@@ -95,15 +97,7 @@ jobs:
           targets: ${{ env.TARGETS }}
 
       - name: Install cargo-hack
-        shell: bash
-        run: |
-          curl -LsSf https://github.com/taiki-e/cargo-hack/releases/latest/download/cargo-hack-x86_64-unknown-linux-gnu.tar.gz \
-          | tar xzf - -C ~/.cargo/bin
-
-      - name: Cache cargo output
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.kind.name }}
+        uses: taiki-e/install-action@cargo-hack
 
       - name: Check feature powerset
         env:
@@ -129,17 +123,17 @@ jobs:
 
   check-benchmarks:
     name: Type-check benchmarks
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) || github.event_name == 'push'
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v3
-
-      - name: Install toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions/checkout@v4
 
       - name: Cache cargo output
         uses: Swatinem/rust-cache@v2
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Type-check benchmarks
         run: cargo check -p time --benches --all-features
@@ -153,49 +147,39 @@ jobs:
     strategy:
       matrix:
         rust:
-          - { version: "1.61.0", name: MSRV }
+          - { version: "1.67.1", name: MSRV }
           - { version: stable, name: stable }
         os:
-          - { name: Ubuntu, value: ubuntu-20.04 }
+          - { name: Ubuntu, value: ubuntu-latest }
           - { name: Windows, value: windows-latest }
           - { name: MacOS, value: macOS-latest }
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Cache cargo output
+        uses: Swatinem/rust-cache@v2
 
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust.version }}
 
-      - name: Install cargo-hack
-        run: |
-          host=$(rustc -Vv | grep host | sed 's/host: //')
-          if [[ $host =~ windows ]]; then
-              curl -LsSf https://github.com/taiki-e/cargo-hack/releases/latest/download/cargo-hack-${host}.zip -o cargo-hack.zip
-              7z x cargo-hack.zip -o$HOME/.cargo/bin
-          elif [[ $host =~ darwin|linux ]]; then
-              curl -LsSf https://github.com/taiki-e/cargo-hack/releases/latest/download/cargo-hack-${host}.tar.gz | tar xzf - -C ~/.cargo/bin
-          else
-              echo "unsupported operating system"
-              exit 1
-          fi
-
-      - name: Cache cargo output
-        uses: Swatinem/rust-cache@v2
-
       - name: Test
         run: cargo test -p time --all-features
 
   miri:
     name: Test (miri)
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) || github.event_name == 'push'
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Cache cargo output
+        uses: Swatinem/rust-cache@v2
 
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -206,23 +190,24 @@ jobs:
         run: cargo miri test -p time --all-features
         env:
           MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check
+          QUICKCHECK_MAX_TESTS: 100
 
   cross-build:
     name: Cross-build
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) || github.event_name == 'push'
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Cache cargo output
+        uses: Swatinem/rust-cache@v2
 
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-gnu
-
-      - name: Cache cargo output
-        uses: Swatinem/rust-cache@v2
 
       - name: Install dependencies
         run: sudo apt install gcc-mingw-w64
@@ -233,12 +218,12 @@ jobs:
 
   fmt:
     name: Formatting
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) || github.event_name == 'push'
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -252,124 +237,95 @@ jobs:
 
   clippy:
     name: Clippy
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) || github.event_name == 'push'
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v3
-
-      - name: Install toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install targets
-        run: |
-          rustup target add \
-          x86_64-unknown-linux-gnu \
-          aarch64-apple-darwin \
-          x86_64-pc-windows-gnu \
-          x86_64-unknown-netbsd \
-          x86_64-unknown-illumos \
-          wasm32-wasi
+        uses: actions/checkout@v4
 
       - name: Cache cargo output
         uses: Swatinem/rust-cache@v2
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: x86_64-unknown-linux-gnu,aarch64-apple-darwin,x86_64-pc-windows-gnu,x86_64-unknown-netbsd,x86_64-unknown-illumos,wasm32-wasip1
 
       - name: Run clippy
         run: |
           cargo clippy \
           --all-features \
-          --benches \
-          --tests \
+          --all-targets \
           --target x86_64-unknown-linux-gnu \
           --target aarch64-apple-darwin \
           --target x86_64-pc-windows-gnu \
           --target x86_64-unknown-netbsd \
           --target x86_64-unknown-illumos \
-          --target wasm32-wasi
+          --target wasm32-wasip1
         env:
           RUSTFLAGS: --cfg bench
 
   documentation:
     name: Documentation
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) || github.event_name == 'push'
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
-
-      - name: Install toolchain
-        uses: dtolnay/rust-toolchain@nightly
 
       - name: Cache cargo output
         uses: Swatinem/rust-cache@v2
 
-      - name: Document public API
-        run: cargo doc -p time --all-features -Zrustdoc-map
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Generate documentation
+        run: cargo doc --workspace --all-features --no-deps
         env:
-          RUSTDOCFLAGS: --cfg __time_03_docs
+          RUSTDOCFLAGS: --cfg docsrs
 
-      - name: Create top-level redirect
-        run: |
-          echo "<meta http-equiv='refresh' content='0; url=https://time-rs.github.io/api/time'>" \
-          > ./target/doc/index.html
-
-      - name: Publish public docs
-        uses: JamesIves/github-pages-deploy-action@releases/v4
-        with:
-          token: ${{ secrets.ACCESS_TOKEN }}
-          branch: main
-          folder: target/doc
-          target-folder: api
-          repository-name: time-rs/time-rs.github.io
-        if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.master_branch)
-
-      - name: Document internal API
-        run: cargo doc -p time --all-features --no-deps -Zrustdoc-map --document-private-items
-        env:
-          RUSTDOCFLAGS: --cfg __time_03_docs --document-hidden-items
-
-      - name: Create top-level redirect
-        run: |
-          echo "<meta http-equiv='refresh' content='0; url=https://time-rs.github.io/internal-api/time'>" \
-          > ./target/doc/index.html
-
-      - name: Publish internal docs
-        uses: JamesIves/github-pages-deploy-action@releases/v4
-        with:
-          token: ${{ secrets.ACCESS_TOKEN }}
-          branch: main
-          folder: target/doc
-          target-folder: internal-api
-          repository-name: time-rs/time-rs.github.io
-        if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.master_branch)
+  publish-documentation:
+    name: Publish docs
+    needs:
+      - documentation
+      - check-targets
+      - check-benchmarks
+      - test
+      - cross-build
+      - fmt
+      - clippy
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.master_branch)
+    uses: time-rs/time-rs.github.io/.github/workflows/trigger-deploy.yaml@main
+    secrets: inherit
+    permissions:
+      actions: write
 
   coverage:
     name: Coverage
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     permissions:
       issues: write
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) || github.event_name == 'push'
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
 
+      - name: Cache cargo output
+        uses: Swatinem/rust-cache@v2
+
       - name: Install toolchain
-        uses: dtolnay/rust-toolchain@nightly
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-llvm-cov
-        run: |
-          curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz \
-          | tar xzf - -C ~/.cargo/bin
-
-      # - name: Cache cargo output
-      #   uses: Swatinem/rust-cache@v2
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate coverage report
         run: |
@@ -380,6 +336,7 @@ jobs:
           RUSTFLAGS: --cfg __ui_tests
 
       - name: Upload coverage report
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           files: ./lcov.txt
+          token: ${{ secrets.CODECOV_TOKEN }}

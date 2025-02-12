@@ -7,31 +7,24 @@ use crate::{Date, Duration, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcO
 
 impl Distribution<Time> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Time {
-        Time::__from_hms_nanos_unchecked(
-            rng.gen_range(0..24),
-            rng.gen_range(0..60),
-            rng.gen_range(0..60),
-            rng.gen_range(0..1_000_000_000),
-        )
+        Time::from_hms_nanos_ranged(rng.r#gen(), rng.r#gen(), rng.r#gen(), rng.r#gen())
     }
 }
 
 impl Distribution<Date> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Date {
-        Date::from_julian_day_unchecked(
-            rng.gen_range(Date::MIN.to_julian_day()..=Date::MAX.to_julian_day()),
-        )
+        // Safety: The Julian day number is in range.
+        unsafe {
+            Date::from_julian_day_unchecked(
+                rng.gen_range(Date::MIN.to_julian_day()..=Date::MAX.to_julian_day()),
+            )
+        }
     }
 }
 
 impl Distribution<UtcOffset> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> UtcOffset {
-        let seconds = rng.gen_range(-86399..=86399);
-        UtcOffset::__from_hms_unchecked(
-            (seconds / 3600) as _,
-            ((seconds % 3600) / 60) as _,
-            (seconds % 60) as _,
-        )
+        UtcOffset::from_hms_ranged(rng.r#gen(), rng.r#gen(), rng.r#gen())
     }
 }
 
@@ -50,9 +43,7 @@ impl Distribution<OffsetDateTime> for Standard {
 
 impl Distribution<Duration> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Duration {
-        Duration::nanoseconds_i128(
-            rng.gen_range(Duration::MIN.whole_nanoseconds()..=Duration::MAX.whole_nanoseconds()),
-        )
+        Duration::new_ranged(rng.r#gen(), rng.r#gen())
     }
 }
 

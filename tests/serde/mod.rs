@@ -1,4 +1,6 @@
-use serde_test::{assert_de_tokens_error, assert_tokens, Compact, Configure, Readable, Token};
+use serde_test::{
+    assert_de_tokens, assert_de_tokens_error, assert_tokens, Compact, Configure, Readable, Token,
+};
 use time::macros::{date, datetime, offset, time};
 use time::{Date, Duration, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset, Weekday};
 
@@ -59,10 +61,10 @@ fn time_error() {
     );
     assert_de_tokens_error::<Readable<Time>>(
         &[Token::BorrowedStr("24:00:00.0")],
-        "hour must be in the range 0..=23",
+        "the 'hour' component could not be parsed",
     );
     assert_de_tokens_error::<Readable<Time>>(
-        &[Token::BorrowedStr("24-00:00.0")],
+        &[Token::BorrowedStr("23-00:00.0")],
         "a character literal was not valid",
     );
     assert_de_tokens_error::<Readable<Time>>(
@@ -71,7 +73,7 @@ fn time_error() {
     );
     assert_de_tokens_error::<Readable<Time>>(
         &[Token::BorrowedStr("00:00:00.0x")],
-        "unexpected trailing characters",
+        "unexpected trailing characters; the end of input was expected",
     );
     assert_de_tokens_error::<Readable<Time>>(
         &[Token::Bool(false)],
@@ -491,12 +493,12 @@ fn offset_date_time_error() {
             Token::U8(0),
             Token::U8(0),
             Token::U32(0),
-            Token::I8(24),
+            Token::I8(26),
             Token::I8(0),
             Token::I8(0),
             Token::TupleEnd,
         ],
-        "invalid value: integer `24`, expected a value in the range -23..=23",
+        "invalid value: integer `26`, expected a value in the range -25..=25",
     );
     // the Deserialize impl does not recognize leap second times as valid
     assert_de_tokens_error::<Compact<OffsetDateTime>>(
@@ -755,51 +757,56 @@ fn utc_offset_error() {
     assert_de_tokens_error::<Compact<UtcOffset>>(
         &[
             Token::Tuple { len: 3 },
-            Token::I8(24),
+            Token::I8(26),
             Token::I8(0),
             Token::I8(0),
             Token::TupleEnd,
         ],
-        "invalid value: integer `24`, expected a value in the range -23..=23",
+        "invalid value: integer `26`, expected a value in the range -25..=25",
     );
 }
 
 #[test]
 fn utc_offset_partial() {
     assert_de_tokens_error::<Compact<UtcOffset>>(
-        &[Token::Tuple { len: 3 }, Token::TupleEnd],
+        &[Token::Tuple { len: 0 }, Token::TupleEnd],
         "expected offset hours",
     );
-    assert_de_tokens_error::<Compact<UtcOffset>>(
-        &[Token::Tuple { len: 3 }, Token::I8(23), Token::TupleEnd],
-        "expected offset minutes",
-    );
-    assert_de_tokens_error::<Compact<UtcOffset>>(
-        &[
-            Token::Tuple { len: 3 },
-            Token::I8(23),
-            Token::I8(58),
-            Token::TupleEnd,
-        ],
-        "expected offset seconds",
+    assert_de_tokens_error::<Readable<UtcOffset>>(
+        &[Token::Tuple { len: 0 }, Token::TupleEnd],
+        "expected offset hours",
     );
 
-    assert_de_tokens_error::<Readable<UtcOffset>>(
-        &[Token::Tuple { len: 3 }, Token::TupleEnd],
-        "expected offset hours",
+    let value = offset!(+23);
+    assert_de_tokens::<Compact<UtcOffset>>(
+        &value.compact(),
+        &[Token::Tuple { len: 1 }, Token::I8(23), Token::TupleEnd],
     );
-    assert_de_tokens_error::<Readable<UtcOffset>>(
-        &[Token::Tuple { len: 3 }, Token::I8(23), Token::TupleEnd],
-        "expected offset minutes",
+    let value = offset!(+23);
+    assert_de_tokens::<Readable<UtcOffset>>(
+        &value.readable(),
+        &[Token::Tuple { len: 1 }, Token::I8(23), Token::TupleEnd],
     );
-    assert_de_tokens_error::<Readable<UtcOffset>>(
+
+    let value = offset!(+23:58);
+    assert_de_tokens::<Compact<UtcOffset>>(
+        &value.compact(),
         &[
-            Token::Tuple { len: 3 },
+            Token::Tuple { len: 2 },
             Token::I8(23),
             Token::I8(58),
             Token::TupleEnd,
         ],
-        "expected offset seconds",
+    );
+    let value = offset!(+23:58);
+    assert_de_tokens::<Readable<UtcOffset>>(
+        &value.readable(),
+        &[
+            Token::Tuple { len: 2 },
+            Token::I8(23),
+            Token::I8(58),
+            Token::TupleEnd,
+        ],
     );
 }
 
@@ -834,6 +841,14 @@ fn duration() {
     assert_tokens(
         &Duration::ZERO.readable(),
         &[Token::BorrowedStr("0.000000000")],
+    );
+    assert_tokens(
+        &Duration::nanoseconds(123).readable(),
+        &[Token::BorrowedStr("0.000000123")],
+    );
+    assert_tokens(
+        &Duration::nanoseconds(-123).readable(),
+        &[Token::BorrowedStr("-0.000000123")],
     );
 }
 

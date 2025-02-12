@@ -3,6 +3,9 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
+pub use self::strftime::{parse_strftime_borrowed, parse_strftime_owned};
+use crate::{error, format_description};
+
 /// A helper macro to make version restrictions simpler to read and write.
 macro_rules! version {
     ($range:expr) => {
@@ -10,38 +13,51 @@ macro_rules! version {
     };
 }
 
+/// A helper macro to statically validate the version (when used as a const parameter).
+macro_rules! validate_version {
+    ($version:ident) => {
+        let _ = $crate::format_description::parse::Version::<$version>::IS_VALID;
+    };
+}
+
 mod ast;
 mod format_item;
 mod lexer;
+mod strftime;
 
-// TODO(jhpratt) document differences between `parse` and `parse_borrowed`.
+/// A struct that is used to ensure that the version is valid.
+struct Version<const N: usize>;
+impl<const N: usize> Version<N> {
+    /// A constant that panics if the version is not valid. This results in a post-monomorphization
+    /// error.
+    const IS_VALID: () = assert!(N >= 1 && N <= 2);
+}
 
 /// Parse a sequence of items from the format description.
 ///
 /// The syntax for the format description can be found in [the
 /// book](https://time-rs.github.io/book/api/format-description.html).
+///
+/// This function exists for backward compatibility reasons. It is equivalent to calling
+/// `parse_borrowed::<1>(s)`. In the future, this function will be deprecated in favor of
+/// `parse_borrowed`.
 pub fn parse(
     s: &str,
-) -> Result<Vec<crate::format_description::FormatItem<'_>>, crate::error::InvalidFormatDescription>
-{
-    let mut lexed = lexer::lex::<1>(s.as_bytes());
-    let ast = ast::parse::<_, 1>(&mut lexed);
-    let format_items = format_item::parse(ast);
-    Ok(format_items
-        .map(|res| res.and_then(TryInto::try_into))
-        .collect::<Result<_, _>>()?)
+) -> Result<Vec<format_description::BorrowedFormatItem<'_>>, error::InvalidFormatDescription> {
+    parse_borrowed::<1>(s)
 }
 
 /// Parse a sequence of items from the format description.
 ///
 /// The syntax for the format description can be found in [the
-/// book](https://time-rs.github.io/book/api/format-description.html).
-pub fn parse_borrowed(
+/// book](https://time-rs.github.io/book/api/format-description.html). The version of the format
+/// description is provided as the const parameter. **It is recommended to use version 2.**
+pub fn parse_borrowed<const VERSION: usize>(
     s: &str,
-) -> Result<Vec<crate::format_description::FormatItem<'_>>, crate::error::InvalidFormatDescription>
-{
-    let mut lexed = lexer::lex::<2>(s.as_bytes());
-    let ast = ast::parse::<_, 2>(&mut lexed);
+) -> Result<Vec<format_description::BorrowedFormatItem<'_>>, error::InvalidFormatDescription> {
+    validate_version!(VERSION);
+    let mut lexed = lexer::lex::<VERSION>(s.as_bytes());
+    let ast = ast::parse::<_, VERSION>(&mut lexed);
     let format_items = format_item::parse(ast);
     Ok(format_items
         .map(|res| res.and_then(TryInto::try_into))
@@ -51,22 +67,35 @@ pub fn parse_borrowed(
 /// Parse a sequence of items from the format description.
 ///
 /// The syntax for the format description can be found in [the
-/// book](https://time-rs.github.io/book/api/format-description.html).
+/// book](https://time-rs.github.io/book/api/format-description.html). The version of the format
+/// description is provided as the const parameter.
 ///
 /// Unlike [`parse`], this function returns [`OwnedFormatItem`], which owns its contents. This means
-/// that there is no lifetime that needs to be handled.
+/// that there is no lifetime that needs to be handled. **It is recommended to use version 2.**
 ///
 /// [`OwnedFormatItem`]: crate::format_description::OwnedFormatItem
-pub fn parse_owned(
+pub fn parse_owned<const VERSION: usize>(
     s: &str,
-) -> Result<crate::format_description::OwnedFormatItem, crate::error::InvalidFormatDescription> {
-    let mut lexed = lexer::lex::<2>(s.as_bytes());
-    let ast = ast::parse::<_, 2>(&mut lexed);
+) -> Result<format_description::OwnedFormatItem, error::InvalidFormatDescription> {
+    validate_version!(VERSION);
+    let mut lexed = lexer::lex::<VERSION>(s.as_bytes());
+    let ast = ast::parse::<_, VERSION>(&mut lexed);
     let format_items = format_item::parse(ast);
-    let items = format_items
-        .map(|res| res.map(Into::into))
-        .collect::<Result<Box<_>, _>>()?;
+    let items = format_items.collect::<Result<Box<_>, _>>()?;
     Ok(items.into())
+}
+
+/// Attach [`Location`] information to each byte in the iterator.
+fn attach_location<'item>(
+    iter: impl Iterator<Item = &'item u8>,
+) -> impl Iterator<Item = (&'item u8, Location)> {
+    let mut byte_pos = 0;
+
+    iter.map(move |byte| {
+        let location = Location { byte: byte_pos };
+        byte_pos += 1;
+        (byte, location)
+    })
 }
 
 /// A location within a string.
@@ -80,6 +109,14 @@ impl Location {
     /// Create a new [`Span`] from `self` to `other`.
     const fn to(self, end: Self) -> Span {
         Span { start: self, end }
+    }
+
+    /// Create a new [`Span`] consisting entirely of `self`.
+    const fn to_self(self) -> Span {
+        Span {
+            start: self,
+            end: self,
+        }
     }
 
     /// Offset the location by the provided amount.
@@ -107,9 +144,7 @@ impl Location {
 /// A start and end point within a string.
 #[derive(Clone, Copy)]
 struct Span {
-    #[allow(clippy::missing_docs_in_private_items)]
     start: Location,
-    #[allow(clippy::missing_docs_in_private_items)]
     end: Location,
 }
 
@@ -205,10 +240,10 @@ struct Error {
     /// The internal error.
     _inner: Unused<ErrorInner>,
     /// The error needed for interoperability with the rest of `time`.
-    public: crate::error::InvalidFormatDescription,
+    public: error::InvalidFormatDescription,
 }
 
-impl From<Error> for crate::error::InvalidFormatDescription {
+impl From<Error> for error::InvalidFormatDescription {
     fn from(error: Error) -> Self {
         error.public
     }
@@ -222,7 +257,6 @@ impl From<Error> for crate::error::InvalidFormatDescription {
 struct Unused<T>(core::marker::PhantomData<T>);
 
 /// Indicate that a value is currently unused.
-#[allow(clippy::missing_const_for_fn)] // false positive
 fn unused<T>(_: T) -> Unused<T> {
     Unused(core::marker::PhantomData)
 }

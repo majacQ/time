@@ -14,7 +14,7 @@
     feature = "serde",
 ))]
 #![allow(
-    clippy::let_underscore_drop,
+    let_underscore_drop,
     clippy::clone_on_copy,
     clippy::cognitive_complexity,
     clippy::std_instead_of_core
@@ -25,9 +25,10 @@
 //! This module should only be used when it is not possible to test the implementation in a
 //! reasonable manner externally.
 
+use std::format;
 use std::num::NonZeroU8;
 
-use crate::formatting::DigitCount;
+use crate::ext::DigitCount;
 use crate::parsing::combinator::rfc::iso8601;
 use crate::parsing::shim::Integer;
 use crate::{duration, parsing};
@@ -72,14 +73,6 @@ fn digit_count() {
 }
 
 #[test]
-fn default() {
-    assert_eq!(
-        duration::Padding::Optimize.clone(),
-        duration::Padding::default()
-    );
-}
-
-#[test]
 fn debug() {
     let _ = format!("{:?}", duration::Padding::Optimize);
     let _ = format!("{:?}", parsing::ParsedItem(b"", 0));
@@ -104,10 +97,8 @@ fn clone() {
 
 #[test]
 fn parsing_internals() {
-    assert!(
-        parsing::ParsedItem(b"", ())
-            .flat_map(|_| None::<()>)
-            .is_none()
-    );
+    assert!(parsing::ParsedItem(b"", ())
+        .flat_map(|_| None::<()>)
+        .is_none());
     assert!(<NonZeroU8 as Integer>::parse_bytes(b"256").is_none());
 }
